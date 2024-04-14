@@ -2,21 +2,27 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 	"unicode"
 
-	"github.com/joho/godotenv"
+	"github.com/vbauerster/mpb"
+	"github.com/vbauerster/mpb/decor"
 	"golang.org/x/net/html"
 )
 
 type DepartureAirline struct {
-	ICAO  string
-	Fleet string
+	ICAO  string `json:"icao"`
+	Fleet string `json:"fleet,omitempty"`
 }
 
 type Departure struct {
@@ -35,19 +41,29 @@ type CallsignOutput struct {
 }
 
 func main() {
-	// Define flags
-	printFlag := flag.String("airport", "", "airport to fetch")
 
+	// Define flags
+	airportPrintFlag := flag.String("airport", "", "airport to fetch")
+	amountPrintFlag := flag.String("amount", "", "amount of aircraft")
 	flag.Parse()
-	if *printFlag == "" {
+	if *airportPrintFlag == "" {
 		flag.Usage()
 		os.Exit(1)
 	}
-	getDepartureCallsigns(*printFlag)
+	var amount int
+	if *amountPrintFlag == "" {
+		amount = 50
+	}
+	amount, err := strconv.Atoi(*amountPrintFlag)
+	if err != nil {
+		log.Fatalf("%v is not an intiger", amount)
+	}
+	getDepartureCallsigns2(*airportPrintFlag, amount)
 
 }
 
-func flightAwareNonsense(callsigns []CallsignOutput) {
+func flightAwareNonsenseDepartures(callsigns []CallsignOutput, amount int, bar *mpb.Bar) {
+	defer wg.Done()
 	departures := []Departure{}
 	scRules := ScratchpadRules{}
 	var scratchpads bool = true
@@ -59,7 +75,6 @@ func flightAwareNonsense(callsigns []CallsignOutput) {
 	for _, aircraft := range callsigns {
 		url := fmt.Sprintf("https://www.flightaware.com/live/flight/%v", aircraft.ICAOCallsign)
 		resp, err := http.Get(url)
-		fmt.Printf("http request for %v done\n", aircraft.ICAOCallsign)
 		if err != nil {
 			panic(err)
 		}
@@ -69,11 +84,9 @@ func flightAwareNonsense(callsigns []CallsignOutput) {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Printf("http parsed for %v\n", aircraft.ICAOCallsign)
 		r := renderNode(doc)
 		r, err = cleanUpString(r)
 		if err != nil {
-			fmt.Println(err)
 			continue
 		}
 
@@ -129,13 +142,19 @@ func flightAwareNonsense(callsigns []CallsignOutput) {
 				break
 			}
 		}
+		bar.IncrBy(1)
+		if amount <= len(departures) {
+			break
+		}
+		time.Sleep(15 * time.Second)
 	}
 	f, err := json.Marshal(departures)
 	if err != nil {
 		panic(err)
 	}
-	e, _ := os.Create("output.json")
+	e, _ := os.Create("departures.json")
 	e.Write(f)
+	bar.IncrBy(1)
 }
 
 func getFleet(ac map[string]Airlines, acType, airline string) string {
@@ -164,45 +183,124 @@ func renderNode(node *html.Node) string {
 	return result
 }
 
-func getDepartureCallsigns(airport string) {
-	var err error
-	var apiKey string
-	err = godotenv.Load(".env")
-	if err != nil {
-		panic(err)
-	}
-	apiKey = os.Getenv("API_KEY")
-	resp, err := http.Get(fmt.Sprintf("http://api.aviationstack.com/v1/flights?access_key=%v&dep_icao=%v", apiKey, airport))
-	if err != nil {
-		panic(err)
-	}
-	// Turn into JSON
+var wg sync.WaitGroup
 
+func getDepartureCallsigns2(airport string, amount int) {
+
+	// passed wg will be accounted at p.Wait() call
+	p := mpb.New(mpb.WithWaitGroup(&wg))
+	total, numGoBars := amount, 2
+	wg.Add(numGoBars)
+	fetchBar := p.AddBar(int64(total),
+		mpb.PrependDecorators(
+			decor.Name("Fetch Callsigns"),
+			decor.Percentage(decor.WCSyncSpace),
+		),
+		mpb.AppendDecorators(
+			decor.OnComplete(decor.AverageETA(decor.ET_STYLE_GO), "Finished!"),
+		),
+	)
+	departureBar := p.AddBar(int64(total),
+		mpb.PrependDecorators(
+			decor.Name("Fetch Departures"),
+			decor.Percentage(decor.WCSyncSpace),
+		),
+		mpb.AppendDecorators(
+			decor.OnComplete(decor.AverageETA(decor.ET_STYLE_GO), "Finished!"),
+		),
+	)
+	// TODO: Add arrivals
+	arrivalBar := p.AddBar(int64(total),
+		mpb.PrependDecorators(
+			decor.Name("Fetch Arrivals"),
+			decor.Percentage(decor.WCSyncSpace),
+		),
+		mpb.AppendDecorators(
+			decor.OnComplete(
+				decor.EwmaETA(decor.ET_STYLE_GO, 30, decor.WCSyncWidth), "Finished!",
+			),
+		),
+	)
+
+	unixNow := time.Now().Unix()
+	before := time.Now().Add(-160 * time.Hour).Unix() // Max hours is 168, but 160 just for saftey
+	url := fmt.Sprintf("https://opensky-network.org/api/flights/departure?airport=%v&begin=%v&end=%v", airport, before, unixNow)
+	resp, err := http.Get(url)
+	if err != nil {
+		panic(err)
+	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		panic(err)
 	}
-	r := Response{}
-	err = json.Unmarshal(body, &r)
+	r := Sky{}
+
+	json.Unmarshal(body, &r)
+
+	output := []CallsignOutput{}
+	for _, ac := range r {
+		if len(ac.Callsign) < 3 {
+			continue
+		}
+		if unicode.IsDigit(rune(ac.Callsign[1])) {
+			continue
+		}
+		d := CallsignOutput{}
+		d.ICAOCallsign = ac.Callsign
+		d.Airline = ac.Callsign[:3]
+		d.ICAOCallsign = d.ICAOCallsign[:len(d.ICAOCallsign)-1]
+		output = append(output, d)
+		fetchBar.IncrBy(1)
+	}
+	go flightAwareNonsenseDepartures(output, amount, departureBar)
+
+	unixNow = time.Now().Unix()
+	before = time.Now().Add(-160 * time.Hour).Unix() // Max hours is 168, but 160 just for saftey
+	url = fmt.Sprintf("https://opensky-network.org/api/flights/arrival?airport=%v&begin=%v&end=%v", airport, before, unixNow)
+	resp, err = http.Get(url)
 	if err != nil {
 		panic(err)
 	}
-	output := []CallsignOutput{}
-	for _, f := range r.Data {
-		output = append(output, CallsignOutput{
-			Airline:      f.Airline.ICAO,
-			ICAOCallsign: f.Flight.ICAO,
-		})
+	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		panic(err)
 	}
-	fmt.Println("callsigns obtained. \n ", output)
-	flightAwareNonsense(output)
+	r = Sky{}
+	json.Unmarshal(body, &r)
+
+	go func() {
+		defer wg.Done()
+		arrivals := []Arrivals{}
+		for _, ac := range r {
+			if len(ac.Callsign) < 3 {
+				continue
+			}
+			if unicode.IsDigit(rune(ac.Callsign[1])) {
+				continue
+			}
+			a := Arrivals{}
+			a.Airport = ac.EstArrivalAirport
+			a.Icao = ac.Callsign[:3]
+			arrivalBar.IncrBy(1)
+			arrivals = append(arrivals, a)
+			if len(arrivals) == amount {
+				break
+			}
+		}
+		e, _ := os.Create("arrivals.json")
+		f, err := json.Marshal(arrivals)
+		if err != nil {
+			panic(err)
+		}
+		e.Write(f)
+	}()
+	p.Wait()
 }
 
 func cleanUpString(text string) (string, error) {
 	h := strings.Index(text, `"version"`)
 	if h == -1 {
-		fmt.Println("whhops")
-		os.Exit(1)
+		return "", errors.New("unable to find version")
 	}
 	text = text[h-1:]
 	// Count occurrences of "origin"
@@ -419,4 +517,24 @@ type ScratchpadRules struct {
 		Scratchpad          string `json:"scratchpad,omitempty"`
 		SecondaryScratchpad string `json:"secondary_scratchpad,omitempty"`
 	} `json:"rules,omitempty"`
+}
+
+type Sky []struct {
+	Icao24                           string `json:"icao24"`
+	FirstSeen                        int    `json:"firstSeen"`
+	EstDepartureAirport              string `json:"estDepartureAirport"`
+	LastSeen                         int    `json:"lastSeen"`
+	EstArrivalAirport                string `json:"estArrivalAirport"`
+	Callsign                         string `json:"callsign"`
+	EstDepartureAirportHorizDistance int    `json:"estDepartureAirportHorizDistance"`
+	EstDepartureAirportVertDistance  int    `json:"estDepartureAirportVertDistance"`
+	EstArrivalAirportHorizDistance   int    `json:"estArrivalAirportHorizDistance"`
+	EstArrivalAirportVertDistance    int    `json:"estArrivalAirportVertDistance"`
+	DepartureAirportCandidatesCount  int    `json:"departureAirportCandidatesCount"`
+	ArrivalAirportCandidatesCount    int    `json:"arrivalAirportCandidatesCount"`
+}
+
+type Arrivals struct {
+	Airport string `json:"airport"`
+	Icao    string `json:"icao"`
 }
