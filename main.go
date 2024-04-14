@@ -278,6 +278,9 @@ func getDepartureCallsigns2(airport string, amount int) {
 			if unicode.IsDigit(rune(ac.Callsign[1])) {
 				continue
 			}
+			if ac.EstDepartureAirport == "" {
+			continue
+			}
 			a := Arrivals{}
 			a.Airport = ac.EstDepartureAirport
 			a.Icao = ac.Callsign[:3]
