@@ -279,7 +279,7 @@ func getDepartureCallsigns2(airport string, amount int) {
 				continue
 			}
 			a := Arrivals{}
-			a.Airport = ac.EstArrivalAirport
+			a.Airport = ac.EstDepartureAirport
 			a.Icao = ac.Callsign[:3]
 			arrivalBar.IncrBy(1)
 			arrivals = append(arrivals, a)
