@@ -5,7 +5,16 @@ Start of with downloading the *AirplaneFetcher* executable. Then, download the o
 
 Each request will take around 15 seconds, so larger requests may take some time.
 
-Exits are calculated by the aircrafts first fix. So in cases with WHITE and DIXIE that sometimes use ELVAE, WHITE or DIXIE will not show up as the exit; rather, ELVAE will.
+Exits are calculated by the aircrafts first fix. So in cases with WHITE and DIXIE that sometimes use ELVAE, WHITE or DIXIE will not show up as the exit; rather, ELVAE will. However, you can make an `exit-exeptions.json` file which will be able to replace the exits. An example would look like this:
+```json
+[
+    {
+        "found_exit": "ELVAE",
+        "actual_exit": ["WHITE", "DIXIE"]
+    }
+]
+```
+In this file, if the exit `ELVAE` is found, then *AirplaneFetcher* will flag it an check to see if the flightplan contains either `WHITE` or `DIXIE`. If it does, it will replace the exit with that actual exit.
 
 You can customize scratchpad rules for this program by making a `scratchpadRules.json` file. The format for scratchpads look like this:
 

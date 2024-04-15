@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -105,7 +106,7 @@ func flightAwareNonsenseDepartures(callsigns []CallsignOutput, amount int, bar *
 		if h != -1 {
 			r = r[:h-16]
 		}
-		
+
 		err = json.Unmarshal([]byte(r), &f)
 		if err != nil {
 			log.Println(err, r)
@@ -147,6 +148,24 @@ func flightAwareNonsenseDepartures(callsigns []CallsignOutput, amount int, bar *
 					waypointArray = waypointArray[1:]
 				}
 				d.Exit = waypointArray[0]
+				contents, err := os.ReadFile("exit-exeptions.json")
+				if err == nil {
+					j := exitExeptions{}
+					err = json.Unmarshal(contents, &j)
+					if err == nil {
+						for _, exeptions := range j {
+							if exeptions.FoundExit == d.Exit {
+								for _, fix := range waypointArray {
+									if slices.Contains(exeptions.ActualExit, fix) {
+										d.Exit = fix
+									}
+								}
+							}
+						}
+					} else {
+						log.Println("Error unmarshalling exit-exeptions.json")
+					}
+				} 
 				log.Printf("%v. %v\n", aircraft.ICAOCallsign, d)
 				if scratchpads {
 					for _, rule := range scRules.Rules {
@@ -364,6 +383,11 @@ func cleanUpString(text string) (string, error) {
 	}
 	text = text[:len(text)-3]
 	return text, nil
+}
+
+type exitExeptions []struct {
+	FoundExit  string   `json:"found_exit"`
+	ActualExit []string `json:"actual_exit"`
 }
 
 type Pagination struct {
