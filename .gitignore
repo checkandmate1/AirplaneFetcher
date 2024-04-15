@@ -3,3 +3,4 @@ arrivals.json
 departures.json
 log.txt
 exit-exeptions.json
+.DS_Store
