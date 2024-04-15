@@ -74,7 +74,7 @@ func flightAwareNonsenseDepartures(callsigns []CallsignOutput, amount int, bar *
 	departures := []Departure{}
 	scRules := ScratchpadRules{}
 	var scratchpads bool = true
-	file, err := os.ReadFile("scratchpadRules.json")
+	file, err := os.ReadFile("resources/scratchpad-rules.json")
 	if err != nil {
 		scratchpads = false
 	}
@@ -148,7 +148,7 @@ func flightAwareNonsenseDepartures(callsigns []CallsignOutput, amount int, bar *
 					waypointArray = waypointArray[1:]
 				}
 				d.Exit = waypointArray[0]
-				contents, err := os.ReadFile("exit-exeptions.json")
+				contents, err := os.ReadFile("resources/exit-exeptions.json")
 				if err == nil {
 					j := exitExeptions{}
 					err = json.Unmarshal(contents, &j)

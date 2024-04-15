@@ -45,7 +45,11 @@ jobs:
         name: flightplanfiller
         path: flightplanfiller
     - name: Add in the resource files
-      run: cp openscope-airlines.json   
+      run: |
+        mkdir -p AirplaneFetcher/resources
+        cp openscope-airlines.json AirplaneFetcher/resources
+        cp flightplanfiller AirplaneFetcher 
+        
     - name: Upload release (maybe)
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
