@@ -2,7 +2,6 @@ package main
 
 import (
 	"io/fs"
-	"io/ioutil"
 	"fmt"
 	"path/filepath"
 	"os"
@@ -33,7 +32,7 @@ type Airlines struct {
 }
 
 func LoadResource(path string) []byte {
-	b, err := ioutil.ReadFile("openscope-airlines.json")
+	b, err := os.ReadFile("resources/openscope-airlines.json")
 	if err != nil {
 		panic(err)
 	}
