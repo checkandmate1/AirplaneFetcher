@@ -41,6 +41,12 @@ type CallsignOutput struct {
 }
 
 func main() {
+	p, err := os.Create("log.txt")
+	if err != nil {
+		log.Fatalf("error opening file: %v", err)
+	}
+	defer p.Close()
+	log.SetOutput(p)
 
 	// Define flags
 	airportPrintFlag := flag.String("airport", "", "airport to fetch")
@@ -54,7 +60,7 @@ func main() {
 	if *amountPrintFlag == "" {
 		amount = 50
 	}
-	amount, err := strconv.Atoi(*amountPrintFlag)
+	amount, err = strconv.Atoi(*amountPrintFlag)
 	if err != nil {
 		log.Fatalf("%v is not an intiger", amount)
 	}
@@ -87,6 +93,7 @@ func flightAwareNonsenseDepartures(callsigns []CallsignOutput, amount int, bar *
 		r := renderNode(doc)
 		r, err = cleanUpString(r)
 		if err != nil {
+			log.Printf("error cleaning %v\n", aircraft.ICAOCallsign)
 			continue
 		}
 
@@ -94,8 +101,15 @@ func flightAwareNonsenseDepartures(callsigns []CallsignOutput, amount int, bar *
 		r = r[c+14:]
 		r += "]}"
 		f := FlightAwareResponse{}
-
-		json.Unmarshal([]byte(r), &f)
+		h := strings.Index(r, "adhocAvailable")
+		if h != -1 {
+			r = r[:h-16]
+		}
+		
+		err = json.Unmarshal([]byte(r), &f)
+		if err != nil {
+			log.Println(err, r)
+		}
 		openscope, _ := parseAirlines()
 
 		for _, flight := range f.Flights {
@@ -105,6 +119,7 @@ func flightAwareNonsenseDepartures(callsigns []CallsignOutput, amount int, bar *
 				d := Departure{}
 				fleet := getFleet(openscope, flight.Aircraft.Type, aircraft.Airline)
 				if fleet == "" {
+					log.Printf("%v fleet nil", aircraft.ICAOCallsign)
 					continue
 				}
 				d.Airlines = []DepartureAirline{
@@ -115,6 +130,7 @@ func flightAwareNonsenseDepartures(callsigns []CallsignOutput, amount int, bar *
 				}
 
 				if flight.FlightPlan.Altitude == nil {
+					log.Printf("%v altitude nil.", aircraft.ICAOCallsign)
 					continue
 				}
 
@@ -122,10 +138,16 @@ func flightAwareNonsenseDepartures(callsigns []CallsignOutput, amount int, bar *
 				d.Destination = flight.Destination.Icao
 				d.Route = flight.FlightPlan.Route
 				waypointArray := strings.Split(flight.FlightPlan.Route, " ")
+
+				if d.Route == "" {
+					log.Printf("%v bad route. %v", d.Route, aircraft.ICAOCallsign)
+					continue
+				}
 				if unicode.IsDigit(rune(waypointArray[0][len(waypointArray[0])-1])) {
 					waypointArray = waypointArray[1:]
 				}
 				d.Exit = waypointArray[0]
+				log.Printf("%v. %v\n", aircraft.ICAOCallsign, d)
 				if scratchpads {
 					for _, rule := range scRules.Rules {
 						if rule.Exit == d.Exit {
@@ -142,19 +164,27 @@ func flightAwareNonsenseDepartures(callsigns []CallsignOutput, amount int, bar *
 				break
 			}
 		}
-		bar.IncrBy(1)
 		if amount <= len(departures) {
+			log.Println("break")
+			bar.IncrBy(1)
 			break
+		} else {
+			log.Printf("no break. len: %v. Departures: %v\n", len(departures), departures)
 		}
 		time.Sleep(15 * time.Second)
+		bar.IncrBy(1)
+		log.Println("Increment done")
 	}
-	f, err := json.Marshal(departures)
+	if len(departures) <= 0 {
+		log.Println("No departure aircraft could be generated.")
+	}
+	f, err := json.MarshalIndent(departures, "", "    ")
 	if err != nil {
 		panic(err)
 	}
 	e, _ := os.Create("departures.json")
 	e.Write(f)
-	bar.IncrBy(1)
+	log.Println("Departures done.")
 }
 
 func getFleet(ac map[string]Airlines, acType, airline string) string {
@@ -197,7 +227,7 @@ func getDepartureCallsigns2(airport string, amount int) {
 			decor.Percentage(decor.WCSyncSpace),
 		),
 		mpb.AppendDecorators(
-			decor.OnComplete(decor.AverageETA(decor.ET_STYLE_GO), "Finished!"),
+			decor.OnComplete(decor.Elapsed(decor.ET_STYLE_MMSS), "Finished!"),
 		),
 	)
 	departureBar := p.AddBar(int64(total),
@@ -206,7 +236,7 @@ func getDepartureCallsigns2(airport string, amount int) {
 			decor.Percentage(decor.WCSyncSpace),
 		),
 		mpb.AppendDecorators(
-			decor.OnComplete(decor.AverageETA(decor.ET_STYLE_GO), "Finished!"),
+			decor.OnComplete(decor.Elapsed(decor.ET_STYLE_MMSS), "Finished!"),
 		),
 	)
 	// TODO: Add arrivals
@@ -242,16 +272,25 @@ func getDepartureCallsigns2(airport string, amount int) {
 		if len(ac.Callsign) < 3 {
 			continue
 		}
-		if unicode.IsDigit(rune(ac.Callsign[1])) {
+		if unicode.IsDigit(rune(ac.Callsign[0])) {
 			continue
 		}
 		d := CallsignOutput{}
+		if unicode.IsDigit(rune(ac.Callsign[1])) && ac.Callsign[0] == 'N' {
+			d.Airline = "N"
+			continue
+		} else {
+			d.Airline = ac.Callsign[:3]
+		}
+		if !unicode.IsDigit(rune(ac.Callsign[3])) {
+			continue
+		}
 		d.ICAOCallsign = ac.Callsign
-		d.Airline = ac.Callsign[:3]
 		d.ICAOCallsign = d.ICAOCallsign[:len(d.ICAOCallsign)-1]
 		output = append(output, d)
 		fetchBar.IncrBy(1)
 	}
+	fetchBar.SetTotal(int64(amount), true)
 	go flightAwareNonsenseDepartures(output, amount, departureBar)
 
 	unixNow = time.Now().Unix()
@@ -272,18 +311,23 @@ func getDepartureCallsigns2(airport string, amount int) {
 		defer wg.Done()
 		arrivals := []Arrivals{}
 		for _, ac := range r {
+			if ac.EstDepartureAirport == "" || ac.EstArrivalAirport == "" { // Weed out pesky VFR traffic
+				continue
+			}
 			if len(ac.Callsign) < 3 {
 				continue
 			}
-			if unicode.IsDigit(rune(ac.Callsign[1])) {
+			a := Arrivals{}
+			if unicode.IsDigit(rune(ac.Callsign[0])) {
 				continue
 			}
-			if ac.EstDepartureAirport == "" {
-			continue
+			if unicode.IsDigit(rune(ac.Callsign[1])) && ac.Callsign[0] == 'N' {
+				a.Icao = "N"
+			} else {
+				a.Icao = ac.Callsign[:3]
 			}
-			a := Arrivals{}
+
 			a.Airport = ac.EstDepartureAirport
-			a.Icao = ac.Callsign[:3]
 			arrivalBar.IncrBy(1)
 			arrivals = append(arrivals, a)
 			if len(arrivals) == amount {
@@ -291,11 +335,12 @@ func getDepartureCallsigns2(airport string, amount int) {
 			}
 		}
 		e, _ := os.Create("arrivals.json")
-		f, err := json.Marshal(arrivals)
+		f, err := json.MarshalIndent(arrivals, "", "    ")
 		if err != nil {
 			panic(err)
 		}
 		e.Write(f)
+		log.Println("Arrivals done")
 	}()
 	p.Wait()
 }
