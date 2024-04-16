@@ -36,19 +36,19 @@ jobs:
 
     - name: Build universal binary
       run: |
-        CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -tags static -o flightplanfiller_amd64 .
-        CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -tags static -o flightplanfiller_arm64 .
-        lipo -create -output flightplanfiller flightplanfiller_amd64 flightplanfiller_arm64
+        CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -tags static -o airplanefetcher_amd64 .
+        CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -tags static -o airplanefetcher_arm64 .
+        lipo -create -output airplanefetcher airplanefetcher_amd64 airplanefetcher_arm64
     - name: Save executable
       uses: actions/upload-artifact@v3
       with:
-        name: flightplanfiller
-        path: flightplanfiller
+        name: airplanefetcher
+        path: airplanefetcher
     - name: Add in the resource files
       run: |
         mkdir -p AirplaneFetcher/resources
         cp resources/openscope-airlines.json AirplaneFetcher/resources
-        cp flightplanfiller AirplaneFetcher 
+        cp airplanefetcher AirplaneFetcher 
     - name: Create a ZIP
       run: 
         zip -rv AirplaneFetcher.zip AirplaneFetcher
