@@ -49,9 +49,18 @@ jobs:
         mkdir -p AirplaneFetcher/resources
         cp resources/openscope-airlines.json AirplaneFetcher/resources
         cp flightplanfiller AirplaneFetcher 
-        
+    - name: Create a ZIP
+      run: 
+        zip -rv AirplaneFetcher.zip AirplaneFetcher
+
+    - name: Save zip file as build artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: AirplaneFetcher.zip
+        path: AirplaneFetcher.zip
+
     - name: Upload release (maybe)
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
-        files: 'flightplanfiller'
+        files: 'AirplaneFetcher.zip'
