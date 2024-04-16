@@ -47,7 +47,7 @@ jobs:
     - name: Add in the resource files
       run: |
         mkdir -p AirplaneFetcher/resources
-        cp openscope-airlines.json AirplaneFetcher/resources
+        cp resources/openscope-airlines.json AirplaneFetcher/resources
         cp flightplanfiller AirplaneFetcher 
         
     - name: Upload release (maybe)
