@@ -33,25 +33,17 @@ jobs:
 
     - name: Build
       run: |
-        go build -o ./airplanefetcher.exe .
+        go build -o ./flightplanfiller.exe .
         ls
-    - name: File stuff 
-      run: |
-        mkdir -p AirplaneFetcher/resources
-        cp resources/openscope-airlines.json AirplaneFetcher/resources
-        cp airplanefetcher.exe AirplaneFetcher
-    
-    - name: ZIP it all
-      run: zip -rv AirplaneFetcher.zip AirplaneFetcher
 
     - name: Save executable
       uses: actions/upload-artifact@v3
       with:
-        name: AirplaneFetcher.zip
-        path: AirplaneFetcher.zip
+        name: flightplanfiller.exe
+        path: flightplanfiller.exe
 
     - name: Upload release (maybe)
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
-        files: 'airplanefetcher.exe'
+        files: 'flightplanfiller.exe'
