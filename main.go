@@ -41,6 +41,8 @@ type CallsignOutput struct {
 	ICAOCallsign string
 }
 
+var airport string 
+
 func main() {
 	p, err := os.Create("log.txt")
 	if err != nil {
@@ -57,6 +59,7 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
+	airport = *airportPrintFlag
 	var amount int
 	if *amountPrintFlag == "" {
 		amount = 50
@@ -139,6 +142,9 @@ func flightAwareNonsenseDepartures(callsigns []CallsignOutput, amount int, bar *
 				d.Destination = flight.Destination.Icao
 				d.Route = flight.FlightPlan.Route
 				waypointArray := strings.Split(flight.FlightPlan.Route, " ")
+				if flight.Origin.Icao != airport && flight.Destination.Icao == airport {
+					d.Destination = flight.Origin.Icao
+				}
 
 				if d.Route == "" {
 					log.Printf("%v bad route. %v", d.Route, aircraft.ICAOCallsign)
@@ -258,7 +264,6 @@ func getDepartureCallsigns2(airport string, amount int) {
 			decor.OnComplete(decor.Elapsed(decor.ET_STYLE_MMSS), "Finished!"),
 		),
 	)
-	// TODO: Add arrivals
 	arrivalBar := p.AddBar(int64(total),
 		mpb.PrependDecorators(
 			decor.Name("Fetch Arrivals"),
@@ -274,6 +279,7 @@ func getDepartureCallsigns2(airport string, amount int) {
 	unixNow := time.Now().Unix()
 	before := time.Now().Add(-160 * time.Hour).Unix() // Max hours is 168, but 160 just for saftey
 	url := fmt.Sprintf("https://opensky-network.org/api/flights/departure?airport=%v&begin=%v&end=%v", airport, before, unixNow)
+	log.Printf("Departure URL: %v\n", url)
 	resp, err := http.Get(url)
 	if err != nil {
 		panic(err)
@@ -315,6 +321,7 @@ func getDepartureCallsigns2(airport string, amount int) {
 	unixNow = time.Now().Unix()
 	before = time.Now().Add(-160 * time.Hour).Unix() // Max hours is 168, but 160 just for saftey
 	url = fmt.Sprintf("https://opensky-network.org/api/flights/arrival?airport=%v&begin=%v&end=%v", airport, before, unixNow)
+	log.Printf("Arrival URL: %v\n", url)
 	resp, err = http.Get(url)
 	if err != nil {
 		panic(err)
