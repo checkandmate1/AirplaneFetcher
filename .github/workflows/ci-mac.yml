@@ -51,16 +51,16 @@ jobs:
         cp fplans AirplaneFetcher 
     - name: Create a ZIP
       run: 
-        zip -rv AirplaneFetcher.zip AirplaneFetcher
+        zip -rv AirplaneFetcher(osx).zip AirplaneFetcher
 
     - name: Save zip file as build artifact
       uses: actions/upload-artifact@v3
       with:
-        name: AirplaneFetcher.zip
-        path: AirplaneFetcher.zip
+        name: AirplaneFetcher(osx).zip
+        path: AirplaneFetcher(osx).zip
 
     - name: Upload release (maybe)
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
-        files: 'AirplaneFetcher.zip'
+        files: 'AirplaneFetcher(osx)(osx).zip'
