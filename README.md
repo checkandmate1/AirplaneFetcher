@@ -1,7 +1,7 @@
 Adding flightplans to *vice* is the most time consuming aspect of the facility engineering process. However, this program seeks to solve that issue.
 
 
-Start of with downloading the *AirplaneFetcher* executable. Then, download the openscope-airlines.json file and move it into the same folder as the executable. Finally, run the command with the airport you want and the amount of aircraft you want. If the amount of aircraft is omited, the default value will be 50. For example, `./AirplaneFetcher -airport KEWR -amount 100`. After, `departures.json` and `arrivals.json` will be created with all of the information needed.
+Start of with downloading the *flightplanfiller* executable. Then, create a `resources` folder inside of the folder where the executable is. After, download the openscope-airlines.json file and move it into the resources folder. Finally, run the command with the airport you want and the amount of aircraft you want. If the amount of aircraft is omited, the default value will be 50. For example, `./flightplanfiller -airport KEWR -amount 100`. After, `departures.json` and `arrivals.json` will be created with all of the information needed.
 
 Each request will take around 15 seconds, so larger requests may take some time.
 
