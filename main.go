@@ -63,13 +63,14 @@ func main() {
 	var amount int
 	if *amountPrintFlag == "" {
 		amount = 50
+	} else {
+		amount, err = strconv.Atoi(*amountPrintFlag)
+		if err != nil {
+			log.Fatalf("%v is not an intiger", amount)
+		}
 	}
-	amount, err = strconv.Atoi(*amountPrintFlag)
-	if err != nil {
-		log.Fatalf("%v is not an intiger", amount)
-	}
+	
 	getDepartureCallsigns2(*airportPrintFlag, amount)
-
 }
 
 func flightAwareNonsenseDepartures(callsigns []CallsignOutput, amount int, bar *mpb.Bar) {
