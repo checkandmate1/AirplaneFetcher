@@ -83,7 +83,7 @@ func flightAwareNonsenseDepartures(callsigns []CallsignOutput, amount int, bar *
 		scratchpads = false
 	}
 	json.Unmarshal(file, &scRules)
-	for _, aircraft := range callsigns {
+	Callsign: for _, aircraft := range callsigns {
 		url := fmt.Sprintf("https://www.flightaware.com/live/flight/%v", aircraft.ICAOCallsign)
 		resp, err := http.Get(url)
 		if err != nil {
@@ -124,8 +124,8 @@ func flightAwareNonsenseDepartures(callsigns []CallsignOutput, amount int, bar *
 				d := Departure{}
 				fleet := getFleet(openscope, flight.Aircraft.Type, aircraft.Airline)
 				if fleet == "" {
-					log.Printf("%v fleet nil", aircraft.ICAOCallsign)
-					continue
+					log.Printf("%v: fleet nil for %v", aircraft.ICAOCallsign, flight.AircraftType)
+					continue Callsign
 				}
 				d.Airlines = []DepartureAirline{
 					DepartureAirline{
@@ -149,7 +149,7 @@ func flightAwareNonsenseDepartures(callsigns []CallsignOutput, amount int, bar *
 
 				if d.Route == "" {
 					log.Printf("%v bad route. %v", d.Route, aircraft.ICAOCallsign)
-					continue
+					continue 
 				}
 				if unicode.IsDigit(rune(waypointArray[0][len(waypointArray[0])-1])) {
 					waypointArray = waypointArray[1:]
@@ -302,8 +302,8 @@ func getDepartureCallsigns2(airport string, amount int) {
 			continue
 		}
 		d := CallsignOutput{}
-		if unicode.IsDigit(rune(ac.Callsign[1])) && ac.Callsign[0] == 'N' {
-			d.Airline = "N"
+		badCallsigns := []string{"CFR"} // we can add more to this later
+		if (unicode.IsDigit(rune(ac.Callsign[1])) && ac.Callsign[0] == 'N') || slices.Contains(badCallsigns, ac.Callsign[:3]){
 			continue
 		} else {
 			d.Airline = ac.Callsign[:3]
@@ -316,11 +316,13 @@ func getDepartureCallsigns2(airport string, amount int) {
 		output = append(output, d)
 		fetchBar.IncrBy(1)
 	}
+	if len(output) == 0 {
+		log.Fatalln("Couldn't gather any callsigns, exiting now.")
+	}
+	log.Println("Amount of Callsigns:", len(output))
 	fetchBar.SetTotal(int64(amount), true)
 	go flightAwareNonsenseDepartures(output, amount, departureBar)
 
-	unixNow = time.Now().Unix()
-	before = time.Now().Add(-160 * time.Hour).Unix() // Max hours is 168, but 160 just for saftey
 	url = fmt.Sprintf("https://opensky-network.org/api/flights/arrival?airport=%v&begin=%v&end=%v", airport, before, unixNow)
 	log.Printf("Arrival URL: %v\n", url)
 	resp, err = http.Get(url)
