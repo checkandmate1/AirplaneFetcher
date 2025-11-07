@@ -37,7 +37,7 @@ jobs:
         ls
 
     - name: Save executable
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: flightplanfiller.exe
         path: flightplanfiller.exe
