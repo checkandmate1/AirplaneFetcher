@@ -3,6 +3,7 @@ module github.com/checkandmate1/AirplaneFetcher
 go 1.21.4
 
 require (
+	github.com/joho/godotenv v1.5.1
 	github.com/klauspost/compress v1.17.8
 	golang.org/x/net v0.24.0
 )

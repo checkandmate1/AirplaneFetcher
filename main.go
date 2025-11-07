@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"slices"
 	"strconv"
@@ -16,6 +18,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/joho/godotenv"
 	"github.com/vbauerster/mpb"
 	"github.com/vbauerster/mpb/decor"
 	"golang.org/x/net/html"
@@ -41,9 +44,15 @@ type CallsignOutput struct {
 	ICAOCallsign string
 }
 
-var airport string 
+var airport string
 
 func main() {
+	// Load .env file
+	err := godotenv.Load()
+	if err != nil {
+		log.Printf("Warning: Error loading .env file: %v\n", err)
+	}
+
 	p, err := os.Create("log.txt")
 	if err != nil {
 		log.Fatalf("error opening file: %v", err)
@@ -69,7 +78,7 @@ func main() {
 			log.Fatalf("%v is not an intiger", amount)
 		}
 	}
-	
+
 	getDepartureCallsigns2(*airportPrintFlag, amount)
 }
 
@@ -83,7 +92,8 @@ func flightAwareNonsenseDepartures(callsigns []CallsignOutput, amount int, bar *
 		scratchpads = false
 	}
 	json.Unmarshal(file, &scRules)
-	Callsign: for _, aircraft := range callsigns {
+Callsign:
+	for _, aircraft := range callsigns {
 		url := fmt.Sprintf("https://www.flightaware.com/live/flight/%v", aircraft.ICAOCallsign)
 		resp, err := http.Get(url)
 		if err != nil {
@@ -149,7 +159,7 @@ func flightAwareNonsenseDepartures(callsigns []CallsignOutput, amount int, bar *
 
 				if d.Route == "" {
 					log.Printf("%v bad route. %v", d.Route, aircraft.ICAOCallsign)
-					continue 
+					continue
 				}
 				if unicode.IsDigit(rune(waypointArray[0][len(waypointArray[0])-1])) {
 					waypointArray = waypointArray[1:]
@@ -172,7 +182,7 @@ func flightAwareNonsenseDepartures(callsigns []CallsignOutput, amount int, bar *
 					} else {
 						log.Println("Error unmarshalling exit-exeptions.json")
 					}
-				} 
+				}
 				log.Printf("%v. %v\n", aircraft.ICAOCallsign, d)
 				if scratchpads {
 					for _, rule := range scRules.Rules {
@@ -241,6 +251,57 @@ func renderNode(node *html.Node) string {
 
 var wg sync.WaitGroup
 
+type TokenResponse struct {
+	AccessToken string `json:"access_token"`
+	TokenType   string `json:"token_type"`
+	ExpiresIn   int    `json:"expires_in"`
+}
+
+func getAccessToken() (string, error) {
+	clientID := os.Getenv("CLIENT_ID")
+	clientSecret := os.Getenv("CLIENT_SECRET")
+
+	if clientID == "" || clientSecret == "" {
+		return "", fmt.Errorf("CLIENT_ID and CLIENT_SECRET environment variables must be set")
+	}
+
+	data := url.Values{}
+	data.Set("grant_type", "client_credentials")
+	data.Set("client_id", clientID)
+	data.Set("client_secret", clientSecret)
+
+	req, err := http.NewRequest("POST", "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token", bytes.NewBufferString(data.Encode()))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	log.Printf("Token Response Status: %d\n", resp.StatusCode)
+	log.Printf("Token Response Body: %s\n", string(body))
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to get access token: %s", string(body))
+	}
+
+	var tokenResp TokenResponse
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return "", err
+	}
+
+	return tokenResp.AccessToken, nil
+}
+
 func getDepartureCallsigns2(airport string, amount int) {
 
 	// passed wg will be accounted at p.Wait() call
@@ -277,18 +338,40 @@ func getDepartureCallsigns2(airport string, amount int) {
 		),
 	)
 
-	unixNow := time.Now().Unix()
-	before := time.Now().Add(-160 * time.Hour).Unix() // Max hours is 168, but 160 just for saftey
+	// Constrain range to at most previous day + today (UTC) to avoid crossing 3 partitions
+	nowUTC := time.Now().UTC()
+	startOfTodayUTC := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
+	startOfPrevDayUTC := startOfTodayUTC.Add(-24 * time.Hour)
+	unixNow := nowUTC.Unix()
+	before := startOfPrevDayUTC.Unix()
+	log.Printf("Using UTC window: begin=%v (%v), end=%v (%v)\n", before, time.Unix(before, 0).UTC(), unixNow, time.Unix(unixNow, 0).UTC())
+
+	// Step 1: Get access token first
+	log.Println("Getting access token...")
+	token, err := getAccessToken()
+	if err != nil {
+		log.Fatalf("Failed to get access token: %v", err)
+	}
+	log.Println("Access token obtained successfully")
+
+	// Step 2: Use token in Authorization header
 	url := fmt.Sprintf("https://opensky-network.org/api/flights/departure?airport=%v&begin=%v&end=%v", airport, before, unixNow)
 	log.Printf("Departure URL: %v\n", url)
-	resp, err := http.Get(url)
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		panic(err)
 	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	log.Printf("Departure Response Status: %d\n", resp.StatusCode)
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		panic(err)
 	}
+	log.Printf("Departure Response Body: %s\n", string(body))
 	r := Sky{}
 
 	json.Unmarshal(body, &r)
@@ -303,7 +386,7 @@ func getDepartureCallsigns2(airport string, amount int) {
 		}
 		d := CallsignOutput{}
 		badCallsigns := []string{"CFR"} // we can add more to this later
-		if (unicode.IsDigit(rune(ac.Callsign[1])) && ac.Callsign[0] == 'N') || slices.Contains(badCallsigns, ac.Callsign[:3]){
+		if (unicode.IsDigit(rune(ac.Callsign[1])) && ac.Callsign[0] == 'N') || slices.Contains(badCallsigns, ac.Callsign[:3]) {
 			continue
 		} else {
 			d.Airline = ac.Callsign[:3]
@@ -323,16 +406,24 @@ func getDepartureCallsigns2(airport string, amount int) {
 	fetchBar.SetTotal(int64(amount), true)
 	go flightAwareNonsenseDepartures(output, amount, departureBar)
 
+	// Use token in Authorization header for arrival request
 	url = fmt.Sprintf("https://opensky-network.org/api/flights/arrival?airport=%v&begin=%v&end=%v", airport, before, unixNow)
 	log.Printf("Arrival URL: %v\n", url)
-	resp, err = http.Get(url)
+	req, err = http.NewRequest("GET", url, nil)
 	if err != nil {
 		panic(err)
 	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	log.Printf("Arrival Response Status: %d\n", resp.StatusCode)
 	body, err = io.ReadAll(resp.Body)
 	if err != nil {
 		panic(err)
 	}
+	log.Printf("Arrival Response Body: %s\n", string(body))
 	r = Sky{}
 	json.Unmarshal(body, &r)
 
