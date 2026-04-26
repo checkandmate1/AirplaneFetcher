@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ macos-11 ]
+        os: [ macos-latest ]
 
     name: Build ${{ matrix.os }}
 
@@ -40,7 +40,7 @@ jobs:
         CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -tags static -o fplans_arm64 .
         lipo -create -output fplans fplans_amd64 fplans_arm64
     - name: Save executable
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: fplans
         path: fplans
