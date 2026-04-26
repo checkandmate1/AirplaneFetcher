@@ -14,6 +14,26 @@ Then, create a `resources` folder inside of the folder where the executable is. 
 
 Each request will take around 15 seconds, so larger requests may take some time.
 
+### Exact mode
+
+By default, each entry in `departures.json` records the airline by its 3-letter ICAO and a *fleet* name (looked up against `openscope-airlines.json`). Pass `-exact` to instead preserve the full callsign and emit the actual aircraft type:
+
+```
+./flightplanfiller -airport KEWR -amount 100 -exact
+```
+
+In this mode each `airlines` entry looks like:
+```json
+{ "callsign": "AAL123", "types": ["B738"] }
+```
+instead of the default:
+```json
+{ "icao": "AAL", "fleet": "default" }
+```
+Use this when you need the exact callsign and aircraft type rather than the openscope fleet abstraction. `openscope-airlines.json` is not required when `-exact` is set.
+
+The exact-mode shape matches *vice*'s `AirlineSpecifier` (see [vice PR #764](https://github.com/mmp/vice/pull/764)): vice rejects entries that set both `icao` and `callsign`, so `-exact` omits `icao` and lets vice derive it from the first 3 chars of the callsign.
+
 Exits are calculated by the aircrafts first fix. So in cases with WHITE and DIXIE that sometimes use ELVAE, WHITE or DIXIE will not show up as the exit; rather, ELVAE will. However, you can make an `exit-exeptions.json` file in a resources folder which will be able to replace the exits. An example would look like this:
 ```json
 [

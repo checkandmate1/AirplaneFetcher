@@ -7,3 +7,4 @@ exit-exeptions.json
 text.json
 AirplaneFetcher
 flightplan
+.env

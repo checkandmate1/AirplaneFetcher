@@ -24,9 +24,11 @@ import (
 	"golang.org/x/net/html"
 )
 
-type DepartureAirline struct {
-	ICAO  string `json:"icao"`
-	Fleet string `json:"fleet,omitempty"`
+type AirlineSpecifier struct {
+	ICAO          string   `json:"icao,omitempty"`
+	Callsign      string   `json:"callsign,omitempty"`
+	Fleet         string   `json:"fleet,omitempty"`
+	AircraftTypes []string `json:"types,omitempty"`
 }
 
 type Departure struct {
@@ -34,7 +36,7 @@ type Departure struct {
 	Destination         string             `json:"destination"`
 	Altitude            int                `json:"altitude"`
 	Route               string             `json:"route"`
-	Airlines            []DepartureAirline `json:"airlines"`
+	Airlines            []AirlineSpecifier `json:"airlines"`
 	Scratchpad          string             `json:"scratchpad,omitempty"`
 	SecondaryScratchpad string             `json:"secondary_scratchpad,omitempty"`
 }
@@ -63,6 +65,7 @@ func main() {
 	// Define flags
 	airportPrintFlag := flag.String("airport", "", "airport to fetch")
 	amountPrintFlag := flag.String("amount", "", "amount of aircraft")
+	exactFlag := flag.Bool("exact", false, "preserve full callsign and use exact aircraft type instead of fleet")
 	flag.Parse()
 	if *airportPrintFlag == "" {
 		flag.Usage()
@@ -79,10 +82,10 @@ func main() {
 		}
 	}
 
-	getDepartureCallsigns2(*airportPrintFlag, amount)
+	getDepartureCallsigns2(*airportPrintFlag, amount, *exactFlag)
 }
 
-func flightAwareNonsenseDepartures(callsigns []CallsignOutput, amount int, bar *mpb.Bar) {
+func flightAwareNonsenseDepartures(callsigns []CallsignOutput, amount int, bar *mpb.Bar, exact bool) {
 	defer wg.Done()
 	departures := []Departure{}
 	scRules := ScratchpadRules{}
@@ -125,23 +128,39 @@ Callsign:
 		if err != nil {
 			log.Println(err, r)
 		}
-		openscope, _ := parseAirlines()
+		var openscope map[string]Airlines
+		if !exact {
+			openscope, _ = parseAirlines()
+		}
 
 		for _, flight := range f.Flights {
 
 			if flight.FlightStatus != "" {
 
 				d := Departure{}
-				fleet := getFleet(openscope, flight.Aircraft.Type, aircraft.Airline)
-				if fleet == "" {
-					log.Printf("%v: fleet nil for %v", aircraft.ICAOCallsign, flight.AircraftType)
-					continue Callsign
-				}
-				d.Airlines = []DepartureAirline{
-					DepartureAirline{
-						ICAO:  aircraft.Airline,
-						Fleet: fleet,
-					},
+				if exact {
+					if flight.Aircraft.Type == "" {
+						log.Printf("%v: aircraft type empty", aircraft.ICAOCallsign)
+						continue Callsign
+					}
+					d.Airlines = []AirlineSpecifier{
+						{
+							Callsign:      aircraft.ICAOCallsign,
+							AircraftTypes: []string{flight.Aircraft.Type},
+						},
+					}
+				} else {
+					fleet := getFleet(openscope, flight.Aircraft.Type, aircraft.Airline)
+					if fleet == "" {
+						log.Printf("%v: fleet nil for %v", aircraft.ICAOCallsign, flight.AircraftType)
+						continue Callsign
+					}
+					d.Airlines = []AirlineSpecifier{
+						{
+							ICAO:  aircraft.Airline,
+							Fleet: fleet,
+						},
+					}
 				}
 
 				if flight.FlightPlan.Altitude == nil {
@@ -302,7 +321,7 @@ func getAccessToken() (string, error) {
 	return tokenResp.AccessToken, nil
 }
 
-func getDepartureCallsigns2(airport string, amount int) {
+func getDepartureCallsigns2(airport string, amount int, exact bool) {
 
 	// passed wg will be accounted at p.Wait() call
 	p := mpb.New(mpb.WithWaitGroup(&wg))
@@ -394,8 +413,7 @@ func getDepartureCallsigns2(airport string, amount int) {
 		if !unicode.IsDigit(rune(ac.Callsign[3])) {
 			continue
 		}
-		d.ICAOCallsign = ac.Callsign
-		d.ICAOCallsign = d.ICAOCallsign[:len(d.ICAOCallsign)-1]
+		d.ICAOCallsign = strings.TrimSpace(ac.Callsign)
 		output = append(output, d)
 		fetchBar.IncrBy(1)
 	}
@@ -404,7 +422,7 @@ func getDepartureCallsigns2(airport string, amount int) {
 	}
 	log.Println("Amount of Callsigns:", len(output))
 	fetchBar.SetTotal(int64(amount), true)
-	go flightAwareNonsenseDepartures(output, amount, departureBar)
+	go flightAwareNonsenseDepartures(output, amount, departureBar, exact)
 
 	// Use token in Authorization header for arrival request
 	url = fmt.Sprintf("https://opensky-network.org/api/flights/arrival?airport=%v&begin=%v&end=%v", airport, before, unixNow)
