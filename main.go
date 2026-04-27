@@ -230,6 +230,7 @@ Callsign:
 		bar.IncrBy(1)
 		log.Println("Increment done")
 	}
+	bar.SetTotal(int64(len(departures)), true)
 	if len(departures) <= 0 {
 		log.Println("No departure aircraft could be generated.")
 	}
@@ -472,6 +473,7 @@ func getDepartureCallsigns2(airport string, amount int, exact bool) {
 				break
 			}
 		}
+		arrivalBar.SetTotal(int64(len(arrivals)), true)
 		e, _ := os.Create("arrivals.json")
 		f, err := json.MarshalIndent(arrivals, "", "    ")
 		if err != nil {
